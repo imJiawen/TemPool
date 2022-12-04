@@ -136,4 +136,4 @@ bk/
 data/
 wandb/
 
-*.DS_Store
+.DS_Store
