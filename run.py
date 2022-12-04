@@ -1,9 +1,3 @@
-try:
-    from tqdm import tqdm
-except ImportError:
-    def tqdm(iterable):
-        return iterable
-    
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -11,24 +5,24 @@ import numpy as np
 from util import util
 from einops import rearrange, repeat
 import os
+import time
+from tqdm import tqdm
 
 from torch_geometric_temporal.nn.recurrent import TGCN, A3TGCN, AGCRN, DCRNN, EvolveGCNH, LRGCN, MPNNLSTM
 from torch_geometric_temporal.nn.attention import ASTGCN, STConv, MSTGCN
 from model import PoolASTGCN
 
-from torch_geometric_temporal.dataset import WindmillOutputLargeDatasetLoader, WindmillOutputMediumDatasetLoader, WindmillOutputSmallDatasetLoader
 from torch_geometric_temporal.dataset import ChickenpoxDatasetLoader, TwitterTennisDatasetLoader, EnglandCovidDatasetLoader, MontevideoBusDatasetLoader
 from torch_geometric_temporal.signal import temporal_signal_split
 import sys
 import argparse
-import wandb
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--root_dir", type=str, default="/home/covpreduser/Blob/")
 parser.add_argument('--model_name', type=str, default='poolastgcn')
-parser.add_argument('--dataset', type=str, default='twi')
+parser.add_argument('--dataset', type=str, default='ckp')
 parser.add_argument('--epoch_num', type=int, default=1)
-parser.add_argument('--use_wandb', type=str, default=None)
+parser.add_argument("--g_ratio", type=float, default=0)
+parser.add_argument("--t_ratio", type=float, default=0)
 opt = parser.parse_args()
 
 seed = 1
@@ -38,8 +32,8 @@ DEVICE = torch.device('cuda') # cuda
 util.setup_seed(seed)
 early_stop = util.Early_Stop(es_num)
 
-model_name = opt.model_name # ['astgcn','a3tgcn2', 'agcrn','dcrnn', 'stconv', 'mstgcn', 'tgcn', 'evolgcn]
-dataset = opt.dataset # ['mtr','encov', 'twi','mtm']
+model_name = opt.model_name # ['astgcn','a3tgcn2','agcrn','dcrnn','stconv','mstgcn','tgcn','evolgcn','lrgcn','mpnnlstm', 'poolastgcn']
+dataset = opt.dataset # ['ckp', 'eng','twi_rg17', 'twi_uo17','bus']
 epoch_num = opt.epoch_num
 
 tempool = [[0.5,0.25], [0.5,0.25]]
@@ -57,24 +51,7 @@ if dataset == 'ckp':
     out_step = 1
     num_of_vertices = 20
     node_features = 1
-elif dataset == 'wind_m':
-    loader = WindmillOutputMediumDatasetLoader()
-    in_step = 8
-    out_step = 1
-    num_of_vertices = 26
-    node_features = 1
-elif dataset == 'wind_s':
-    loader = WindmillOutputSmallDatasetLoader()
-    in_step = 8
-    out_step = 1
-    num_of_vertices = 11
-    node_features = 1
-elif dataset == 'wind_l':
-    loader = WindmillOutputLargeDatasetLoader()
-    in_step = 8
-    out_step = 1
-    num_of_vertices = 319
-    node_features = 1
+    tempool = [[0.25,0.15], [0.15, 0.1]]
 elif dataset == 'eng':
     loader = EnglandCovidDatasetLoader()
     in_step = 8
@@ -111,6 +88,15 @@ if model_name in ['stconv', 'agcrn']:
 
 batch_size = 1
 
+if opt.g_ratio > 0:
+    tempool[0] = [opt.g_ratio]
+
+if opt.t_ratio > 0:
+    tempool[1] = [opt.t_ratio]
+
+# save_path = 'in' + str(in_step) + '_g' + str(tempool[0][0]) + '_t' + str(tempool[1][0]) + '.p'
+save_path = None
+
 """
 ## Creating data loader
 """
@@ -124,16 +110,6 @@ train_dataset, test_dataset = temporal_signal_split(dataset, train_ratio=0.8)
 b_train = len(train_dataset.features)
 b_test = len(test_dataset.features)
 
-if opt.use_wandb is not None:
-    os.environ['WANDB_SILENT']="true"
-    wandb.login(key=str('ba7fa76ce534149710bbbc32b6fb8363c4f13044'))
-    wandb.init(
-        name= model_name+'_'+ opt.dataset,
-        project=opt.use_wandb, 
-        entity="imjiawen",
-        tags=[opt.dataset, model_name, 'epoch'+str(opt.epoch_num)],
-        dir=opt.root_dir + "v-jiawezhang/wandb/",
-        config = opt)
 
 class TemporalGNN(torch.nn.Module):
     def __init__(self, node_features, periods, batch_size, out_dim=32, num_of_vertices=None):
@@ -216,7 +192,7 @@ if model_name == 'poolastgcn':
 elif model_name == 'astgcn':
     cml_loss = False
     model = ASTGCN(in_channels=node_features, len_input=in_step, nb_block=3, K=3,time_strides=1,\
-                nb_chev_filter=32, nb_time_filter=32, num_for_predict=out_step, num_of_vertices=num_of_vertices, normalization="sym").to(DEVICE) #
+                nb_chev_filter=32, nb_time_filter=32, num_for_predict=out_step, num_of_vertices=num_of_vertices, normalization="sym").to(DEVICE)
 elif model_name == 'mstgcn':
     cml_loss = False
     model = MSTGCN(in_channels=node_features, len_input=in_step, nb_block=3, K=3,time_strides=1,\
@@ -235,18 +211,16 @@ print("lr: ", str(lr))
 model = model.to(DEVICE)
 optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
-if opt.use_wandb is not None:
-    wandb.watch(model)
-    
 model.train()
+time_list = []
 
 for epoch in tqdm(range(epoch_num)):
     total_loss = []
     cost = 0
     h1 = None
-    time = 0
+    count = 0
     h, c = None, None
-    # for encoder_inputs, labels in tqdm(train_loader, mininterval=2, desc='  - (Training)   ', leave=False):
+    tic = time.time()
     for snapshot in tqdm(train_dataset, total=b_train, mininterval=2, desc='  - (Training)   ', leave=False):
         x = snapshot.x.to(DEVICE)
         if model_name in ['poolastgcn']:
@@ -272,25 +246,24 @@ for epoch in tqdm(range(epoch_num)):
         
         cost = cost + torch.mean((y_hat-snapshot.y.to(DEVICE))**2)
         if cml_loss:
-            time += 1
+            count += 1
         else:
             cost.backward()
             total_loss.append(cost.item())
             cost = 0
 
     if cml_loss:
-        cost = cost / (time+1)
+        cost = cost / (count+1)
         cost.backward()
         total_loss = cost.item()
     else:
         total_loss = np.average(total_loss)
-        
-    if opt.use_wandb is not None:
-        wandb.log({"train_loss": total_loss})
-        
+
     optimizer.step()
     optimizer.zero_grad()
     
+    toc = time.time()
+    time_list.append((toc-tic))
     
     # early stop
     end_flag = early_stop(total_loss,model)
@@ -298,6 +271,14 @@ for epoch in tqdm(range(epoch_num)):
         break
     
     print("\nLOSS: {:.4f}".format(total_loss))
+    
+if save_path is not None:
+    torch.save({
+        'model_state_dict':early_stop.model_state_dict
+    }, save_path)
+print("saving checkpoints to ", save_path)
+
+avg_train_time = sum(time_list) / len(time_list)
     
 model.eval()
 mse_list = []
@@ -335,9 +316,4 @@ mse = np.average(mse_list)
 rmse = np.average(rmse_list)
 print("MSE: {:.4f}".format(mse))
 print("RMSE: {:.4f}".format(rmse))
-
-if opt.use_wandb is not None:
-    results = [[opt.model_name, opt.dataset, mse, rmse]]
-    wandb.log({"Test Results": wandb.Table(data=results,
-                                columns = ["model", "dataset", "mse", "rmse"])})
-    wandb.finish()
+print("Train time: {:.4f}".format(avg_train_time))

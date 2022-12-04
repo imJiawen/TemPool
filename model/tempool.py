@@ -1,3 +1,7 @@
+###############
+### Part of this script is modified based on https://github.com/diozaka/diffseg ###
+###############
+
 import torch
 import torch.nn as nn
 import warnings
@@ -372,34 +376,30 @@ class TemPool(nn.Module):
         
 
 
-    def forward(self, idx, X, edge_index, edge_weight):
+    def forward(self, idx, X, edge_index, edge_weight, viz=False):
         # (B, N, D, T)
         b, n, d ,t = X.shape
         X = rearrange(X, 'b n d t -> (b t) n d')
         
-        # if isinstance(edge_index, list):
-        #     
-        # if edge_index.dim() > 3: # dynamic
-        #     edge_index = rearrange(edge_index, 'b i m t -> (b t) i m')
-        #     edge_weight = rearrange(edge_weight, 'b m t -> (b t) m')
-        
         # X:(B*T,N,D) -> (B*T,N_new, D)
-        _, X, edge_index, edge_weight, mc_loss, o_loss = self.graph_seg_stack[idx](X, edge_index, edge_weight) 
+        s_graph, X, edge_index, edge_weight, mc_loss, o_loss = self.graph_seg_stack[idx](X, edge_index, edge_weight) 
         
         X = rearrange(X, '(b t) n d -> b t (n d)', b=b)
 
-        # edge_index = rearrange(edge_index, '(b t) i m ->b i m t', b=b)
-        # edge_weight = rearrange(edge_weight, '(b t) m -> b t m', b=b)
-        
-        _, _, X, edge_weight = self.tem_seg_stack[idx](X, edge_weight) # (B,T,N*D) => (B,T_new, N*D)
-
+        if not viz:
+            s_time, _, X, edge_weight = self.tem_seg_stack[idx](X, edge_weight) # (B,T,N*D) => (B,T_new, N*D)
+        else:
+            s_time, _, X, edge_weight = self.tem_seg_stack[idx](X, edge_weight, kernel='integer')
+            
         X = rearrange(X, 'b t (n d) -> b n d t', d=d)
-        # edge_index = edge_index[:, :, :, :X.shape[-1]]
+
         edge_index = rearrange(edge_index, '(b t) i m ->b i m t', b=b)
         edge_weight = rearrange(edge_weight, 'b t m -> b m t') 
         
         
-        # assert edge_index.shape[-1] == edge_weight.shape[-1]
-        return X, edge_index, edge_weight, mc_loss, o_loss
+        if not viz:
+            return X, edge_index, edge_weight, mc_loss, o_loss
+        else:
+            return X, edge_index, edge_weight, mc_loss, o_loss, s_graph, s_time
 
 

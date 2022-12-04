@@ -1,3 +1,7 @@
+###############
+### Part of this script is modified based on https://github.com/benedekrozemberczki/pytorch_geometric_temporal ###
+###############
+
 import math
 from typing import Optional, List, Union
 import sys
@@ -625,7 +629,7 @@ class PoolASTGCN(nn.Module):
                 nn.init.uniform_(p)
 
     def forward(
-        self, X: torch.FloatTensor, edge_index: torch.LongTensor, edge_weight: torch.LongTensor
+        self, X: torch.FloatTensor, edge_index: torch.LongTensor, edge_weight: torch.LongTensor, viz: bool = False
     ) -> torch.FloatTensor:
         """
         Making a forward pass.
@@ -639,12 +643,20 @@ class PoolASTGCN(nn.Module):
         """
         total_mc_loss, total_o_loss = 0, 0
         idx = 0
+        s_graph_list = []
+        s_time_list = []
         for block in self._blocklist: 
             # original x is (B,N,F_in,T) will give (B,N,F_out,T) for example (32, 307, 1, 12) -> (32, 307, 64, 12) 
             X = block(X, edge_index, edge_weight) 
             if len(self.tempool) > 0 and idx < len(self.tempool[0]):
                 # (B, N, D, T) -> (B, N_new, D, T_new), (2, m), (b, m, t)
-                X, edge_index, edge_weight, mc_loss, o_loss = self.st_pooling(idx, X, edge_index, edge_weight)  
+                if not viz:
+                    X, edge_index, edge_weight, mc_loss, o_loss = self.st_pooling(idx, X, edge_index, edge_weight)  
+                else:
+                    X, edge_index, edge_weight, mc_loss, o_loss, s_graph, s_time = self.st_pooling(idx, X, edge_index, edge_weight, viz=viz) 
+                    s_graph_list.append(s_graph)
+                    s_time_list.append(s_time)
+                    
                 t = X.shape[-1]
                 edge_index = [edge_index[0,:,:,i] for i in range(t)]
                 edge_weight = [edge_weight[0,:,i] for i in range(t)]
@@ -659,4 +671,7 @@ class PoolASTGCN(nn.Module):
 
         X = rearrange(X, 'b (t d) 1 1 -> b t d', d=self.out_dim)
         
-        return X, total_mc_loss, total_o_loss #(b,N,T) for exmaple (32, 307,12)
+        if not viz:
+            return X, total_mc_loss, total_o_loss #(b,N,T) for exmaple (32, 307,12)
+        else:
+            return X, total_mc_loss, total_o_loss, s_graph_list, s_time_list
