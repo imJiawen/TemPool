@@ -41,7 +41,7 @@ To validate the effectiveness of Tempool, we select five datasets for each type 
 
 ## Quick Start
 
-To quickly run the proposed model, please execute the Shell script:
+Please execute the Shell script to run the backbone model with the proposed pooling layers:
 
 ```bash
 bash run.sh
@@ -57,9 +57,9 @@ python run.py --model_name {model_name} \
                 --g_ratio {g_ratio} --t_ratio {t_ratio}
 ```
 
-   - ```model_name```: the model name, select from ```['astgcn','a3tgcn2','agcrn','dcrnn','stconv','mstgcn','tgcn','evolgcn','lrgcn','mpnnlstm', 'poolastgcn']```
-   - ```dataset```: the dataset name, select from ```['ckp', 'eng','twi_rg17', 'twi_uo17','bus']```
-   - ```epoch_num```: training epoch number
+   - ```model_name```: the model name, select from ```['astgcn','a3tgcn2','agcrn','dcrnn','stconv','mstgcn','tgcn','evolgcn','lrgcn','mpnnlstm', 'poolastgcn']```.
+   - ```dataset```: the dataset name, select from ```['ckp', 'eng','twi_rg17', 'twi_uo17','bus']```.
+   - ```epoch_num```: training epoch number.
    - ```g_ratio```: control the cluster number of nodes, used for the ablation study.
    - ```t_ratio```: control the segment number of snapshots, used for the ablation study.
    
