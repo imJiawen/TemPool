@@ -29,15 +29,15 @@ pip install -r requirement.txt
 
 ## Datasets
 
-To validate the effectiveness of Tempool, we select five datasets for each type of temporal graph.
+To validate the effectiveness of Tempool, we select five datasets for each type of temporal graph. More details can be found at [PyTorch Geometric Temporal Dataset](https://pytorch-geometric-temporal.readthedocs.io/en/latest/modules/dataset.html).
 
    |  Dataset   | Abbr.  | Signal | Graph | Frequency | \|V\| |
    |  :----  | :----: | :----: | :----: | :----: | :----: |
-   | Chickenpox         | CKP    | Temporal  | Static | Weekly  | 20 |
+   | Chickenpox Hungary | CKP    | Temporal  | Static | Weekly  | 20 |
    | Montevideo Bus     | BUS    | Temporal  | Static | Hourly  | 675 |
    | Twitter Tennis RG  | TWI-RG | Static    | Dynamic | Hourly | 1000 |
    | Twitter Tennis UO  | TWI-UO | Static    | Dynamic | Hourly | 1000 |
-   | England COVID      | EnCOV  | Temporal  | Dynamic | Daily  | 129 |
+   | England Covid-19   | EnCOV  | Temporal  | Dynamic | Daily  | 129 |
 
 ## Quick Start
 
